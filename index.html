@@ -503,14 +503,19 @@
                             <h2 class="card-title" id="qtQuestionTitle"></h2>
                             <p id="qtQuestionDescription" style="margin-bottom: 16px; color: #666;"></p>
                             
-                            <!-- AI Suggestion Banner -->
-                            <div class="ai-banner" id="qtAiBanner">
+                            <!-- AI Suggestion Banner (hidden until user answers) -->
+                            <div class="ai-banner" id="qtAiBanner" style="display: none;">
                                 <span class="ai-banner-icon">🤖</span>
                                 <div>
                                     <strong>AI Suggestion:</strong> <span id="qtAiSuggestionText"></span>
                                     <span class="confidence-badge" id="qtAiConfidence"></span>
                                 </div>
                             </div>
+                            
+                            <!-- Reveal AI button for Quick Tasks -->
+                            <button class="btn btn-secondary" id="qtRevealAiBtn" style="display: none; margin-bottom: 16px; width: 100%;" onclick="revealQtAiSuggestion()">
+                                🤖 Show AI Suggestion
+                            </button>
                             
                             <div id="qtOptionsList"></div>
                         </div>
@@ -574,14 +579,19 @@
                             <h2 class="card-title" id="questionTitle"></h2>
                             <p id="questionDescription" style="margin-bottom: 16px; color: #666;"></p>
                             
-                            <!-- AI Suggestion Banner -->
-                            <div class="ai-banner" id="aiBanner">
+                            <!-- AI Suggestion Banner (hidden until user answers) -->
+                            <div class="ai-banner" id="aiBanner" style="display: none;">
                                 <span class="ai-banner-icon">🤖</span>
                                 <div>
                                     <strong>AI Suggestion:</strong> <span id="aiSuggestionText"></span>
                                     <span class="confidence-badge" id="aiConfidence"></span>
                                 </div>
                             </div>
+                            
+                            <!-- Reveal AI button (shown after user selects answer) -->
+                            <button class="btn btn-secondary" id="revealAiBtn" style="display: none; margin-bottom: 16px; width: 100%;" onclick="revealAiSuggestion()">
+                                🤖 Show AI Suggestion
+                            </button>
 
                             <div id="optionsList"></div>
                             
@@ -28707,15 +28717,21 @@ const WORKSHOP_DATA = [
             // Get AI suggestion for this segment
             const aiData = currentQuickTask.aiSuggestions ? currentQuickTask.aiSuggestions[segIdx] : null;
             
-            // Show AI banner
-            const aiBanner = document.getElementById('qtAiBanner');
+            // Store AI data but hide banner initially
             if (aiData && aiData.value) {
-                aiBanner.classList.remove('hidden');
                 const aiOption = currentQuickTask.options.find(o => o.value === aiData.value);
                 document.getElementById('qtAiSuggestionText').innerText = aiOption ? aiOption.label : aiData.value;
                 document.getElementById('qtAiConfidence').innerText = Math.round(aiData.confidence * 100) + '%';
+            }
+            
+            // Hide AI banner and reveal button initially
+            document.getElementById('qtAiBanner').style.display = 'none';
+            
+            // Show reveal button only if user already answered
+            if (qtAnswers[segIdx] && aiData && aiData.value) {
+                document.getElementById('qtRevealAiBtn').style.display = 'block';
             } else {
-                aiBanner.classList.add('hidden');
+                document.getElementById('qtRevealAiBtn').style.display = 'none';
             }
             
             // Render question
@@ -28729,38 +28745,41 @@ const WORKSHOP_DATA = [
                 btn.className = 'option-btn';
                 btn.innerHTML = `<div class="option-radio"></div><span>${opt.label}</span>`;
                 
-                // Pre-select: user's previous answer, or AI suggestion
+                // Only select if user previously answered - NO AI pre-selection
                 if (qtAnswers[segIdx] === opt.value) {
-                    btn.classList.add('selected');
-                } else if (!qtAnswers[segIdx] && aiData && opt.value === aiData.value) {
                     btn.classList.add('selected');
                 }
                 
-                btn.onclick = () => selectQTOption(opt.value, btn);
+                btn.onclick = () => selectQTOption(opt.value, btn, aiData);
                 optionsList.appendChild(btn);
             });
             
             generateQTWaveform();
         }
 
-        function selectQTOption(value, btnElem) {
+        function selectQTOption(value, btnElem, aiData) {
             document.querySelectorAll('#qtOptionsList .option-btn').forEach(b => b.classList.remove('selected'));
             btnElem.classList.add('selected');
             qtAnswers[qtSegments[qtCurrentIdx]] = value;
+            
+            // Show reveal AI button after user selects
+            if (aiData && aiData.value) {
+                document.getElementById('qtRevealAiBtn').style.display = 'block';
+            }
+        }
+        
+        function revealQtAiSuggestion() {
+            document.getElementById('qtAiBanner').style.display = 'flex';
+            document.getElementById('qtRevealAiBtn').style.display = 'none';
         }
 
         function submitQuickTask() {
             const segIdx = qtSegments[qtCurrentIdx];
-            const aiData = currentQuickTask.aiSuggestions ? currentQuickTask.aiSuggestions[segIdx] : null;
             
-            // If no answer selected, use AI suggestion
+            // User MUST select an answer - no auto-accepting AI
             if (!qtAnswers[segIdx]) {
-                if (aiData && aiData.value) {
-                    qtAnswers[segIdx] = aiData.value;
-                } else {
-                    alert('Please select an option.');
-                    return;
-                }
+                alert('Please select an option before continuing.');
+                return;
             }
             
             // Show success animation
@@ -28896,7 +28915,8 @@ const WORKSHOP_DATA = [
 
             // Handle open-ended question differently
             if (q.isOpenEnded) {
-                aiBanner.classList.add('hidden');
+                document.getElementById('aiBanner').style.display = 'none';
+                document.getElementById('revealAiBtn').style.display = 'none';
                 optionsList.classList.add('hidden');
                 openEndedInput.classList.remove('hidden');
                 
@@ -28907,29 +28927,37 @@ const WORKSHOP_DATA = [
                 openEndedInput.classList.add('hidden');
                 optionsList.classList.remove('hidden');
 
-                // Show AI suggestion
+                // Store AI data for later reveal
                 if (aiData && aiData.value) {
-                    aiBanner.classList.remove('hidden');
                     const aiOption = q.options.find(o => o.value === aiData.value);
                     document.getElementById('aiSuggestionText').innerText = aiOption ? aiOption.label : aiData.value;
                     document.getElementById('aiConfidence').innerText = Math.round(aiData.confidence * 100) + '%';
+                }
+                
+                // Hide AI suggestion initially
+                document.getElementById('aiBanner').style.display = 'none';
+                
+                // Check if user has already answered this question
+                const currentAnswer = answers[`${currentSegIdx}_${q.id}`];
+                if (currentAnswer && aiData && aiData.value) {
+                    // User already answered - show reveal button
+                    document.getElementById('revealAiBtn').style.display = 'block';
                 } else {
-                    aiBanner.classList.add('hidden');
+                    document.getElementById('revealAiBtn').style.display = 'none';
                 }
 
-                // Render options
+                // Render options - NO pre-selection of AI answer
                 optionsList.innerHTML = '';
                 q.options.forEach(opt => {
                     const btn = document.createElement('button');
                     btn.className = 'option-btn';
                     btn.innerHTML = `<div class="option-radio"></div><span>${opt.label}</span>`;
 
-                    const currentAnswer = answers[`${currentSegIdx}_${q.id}`];
+                    // Only select if user previously answered this question
                     if (currentAnswer === opt.value) {
                         btn.classList.add('selected');
-                    } else if (!currentAnswer && aiData && opt.value === aiData.value) {
-                        btn.classList.add('selected');
                     }
+                    // REMOVED: pre-selection of AI suggestion
 
                     btn.onclick = () => selectOption(q.id, opt.value, btn, aiData);
                     optionsList.appendChild(btn);
@@ -28952,6 +28980,11 @@ const WORKSHOP_DATA = [
             
             const prevAnswer = answers[`${currentSegIdx}_${qId}`];
             answers[`${currentSegIdx}_${qId}`] = val;
+            
+            // Show reveal AI button after user selects an answer
+            if (aiData && aiData.value) {
+                document.getElementById('revealAiBtn').style.display = 'block';
+            }
 
             // Update stats only if this is a new answer
             if (!prevAnswer && aiData) {
@@ -28978,6 +29011,11 @@ const WORKSHOP_DATA = [
             document.getElementById('statConfirmed').innerText = stats.confirmed;
             document.getElementById('statChanged').innerText = stats.changed;
         }
+        
+        function revealAiSuggestion() {
+            document.getElementById('aiBanner').style.display = 'flex';
+            document.getElementById('revealAiBtn').style.display = 'none';
+        }
 
         function nextQuestion() {
             const q = questions[currentQIdx];
@@ -28987,17 +29025,11 @@ const WORKSHOP_DATA = [
             if (q.isOpenEnded) {
                 answers[`${currentSegIdx}_${q.id}`] = document.getElementById('openEndedText').value;
             } else {
-                // Check if answer selected
+                // Check if answer selected - user MUST select an answer
                 const aiData = seg.aiSuggestions ? seg.aiSuggestions[q.id] : null;
                 if (!answers[`${currentSegIdx}_${q.id}`]) {
-                    if (aiData && aiData.value) {
-                        answers[`${currentSegIdx}_${q.id}`] = aiData.value;
-                        stats.confirmed++;
-                        updateStatsDisplay();
-                    } else {
-                        alert("Please select an option.");
-                        return;
-                    }
+                    alert("Please select an option before continuing.");
+                    return;
                 }
             }
 
