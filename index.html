@@ -28525,10 +28525,10 @@ const WORKSHOP_DATA = [
         
         function resumeSession() {
             const savedProgress = loadProgress();
+            console.log('Resuming session with saved progress:', savedProgress);
+            
             if (savedProgress) {
                 // Restore state
-                currentSegIdx = savedProgress.currentSegIdx || 0;
-                currentQIdx = savedProgress.currentQIdx || 0;
                 answers = savedProgress.answers || {};
                 stats = savedProgress.stats || { confirmed: 0, changed: 0 };
                 startTime = savedProgress.startTime ? new Date(savedProgress.startTime) : new Date();
@@ -28540,8 +28540,18 @@ const WORKSHOP_DATA = [
             document.getElementById('totalSegments').innerText = segments.length;
             
             updateStatsDisplay();
-            loadSegment(currentSegIdx);
-            currentQIdx = savedProgress?.currentQIdx || 0;
+            
+            // Load segment first (this sets currentQIdx to 0)
+            const resumeSegIdx = savedProgress?.currentSegIdx || 0;
+            const resumeQIdx = savedProgress?.currentQIdx || 0;
+            
+            console.log('Resuming at segment:', resumeSegIdx, 'question:', resumeQIdx);
+            
+            loadSegment(resumeSegIdx);
+            
+            // Now override currentQIdx after loadSegment reset it
+            currentQIdx = resumeQIdx;
+            console.log('After restore - currentSegIdx:', currentSegIdx, 'currentQIdx:', currentQIdx);
             renderQuestion();
         }
         
@@ -29008,8 +29018,23 @@ const WORKSHOP_DATA = [
         }
 
         function renderQuestion() {
+            // Safety checks
+            if (currentQIdx >= questions.length) {
+                console.error('Invalid question index:', currentQIdx);
+                currentQIdx = 0;
+            }
+            if (currentSegIdx >= segments.length) {
+                console.error('Invalid segment index:', currentSegIdx);
+                currentSegIdx = 0;
+            }
+            
             const q = questions[currentQIdx];
             const seg = segments[currentSegIdx];
+            
+            if (!q || !seg) {
+                console.error('Missing question or segment:', { q, seg, currentQIdx, currentSegIdx });
+                return;
+            }
 
             document.getElementById('questionTitle').innerText = `Q${currentQIdx + 1}: ${q.title}`;
             document.getElementById('questionDescription').innerText = q.description;
