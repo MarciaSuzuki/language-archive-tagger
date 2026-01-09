@@ -28383,6 +28383,38 @@ const WORKSHOP_DATA = [
         let prevAudio = new Audio();
         let nextAudio = new Audio();
         let isPlaying = false;
+        
+        // ===== AUTO-SAVE FUNCTIONS =====
+        function saveProgress() {
+            const progressData = {
+                currentSegIdx: currentSegIdx,
+                currentQIdx: currentQIdx,
+                answers: answers,
+                stats: stats,
+                startTime: startTime ? startTime.toISOString() : null,
+                lastSaved: new Date().toISOString()
+            };
+            localStorage.setItem('archiveTaggerProgress', JSON.stringify(progressData));
+            console.log('Progress saved:', currentSegIdx, 'segments,', Object.keys(answers).length, 'answers');
+        }
+        
+        function loadProgress() {
+            const savedProgress = localStorage.getItem('archiveTaggerProgress');
+            if (savedProgress) {
+                try {
+                    const data = JSON.parse(savedProgress);
+                    return data;
+                } catch (e) {
+                    console.error('Error loading progress:', e);
+                    return null;
+                }
+            }
+            return null;
+        }
+        
+        function clearProgress() {
+            localStorage.removeItem('archiveTaggerProgress');
+        }
 
         // Audio error handling
         audio.onerror = function() {
@@ -28424,12 +28456,40 @@ const WORKSHOP_DATA = [
 
         function showWelcomeBack() {
             const surveyScreen = document.getElementById('surveyScreen');
+            const savedProgress = loadProgress();
             
             // Handle both old and new profile formats
             const listeningLevel = userProfile.selfAssessment?.storyConfidence || 
                                    userProfile.selfAssessment?.korsaeUnderstanding || 
                                    userProfile.selfAssessment?.listeningSkills || 
                                    'N/A';
+            
+            // Calculate progress info
+            let progressHTML = '';
+            let resumeButton = '';
+            if (savedProgress && savedProgress.answers && Object.keys(savedProgress.answers).length > 0) {
+                const answeredSegments = new Set();
+                Object.keys(savedProgress.answers).forEach(key => {
+                    const segIdx = parseInt(key.split('_')[0]);
+                    answeredSegments.add(segIdx);
+                });
+                const completedSegments = answeredSegments.size;
+                const totalAnswers = Object.keys(savedProgress.answers).length;
+                const lastSaved = savedProgress.lastSaved ? new Date(savedProgress.lastSaved).toLocaleString() : 'Unknown';
+                
+                progressHTML = `
+                    <div style="background: #e8f4f2; border: 2px solid var(--brand-blue); border-radius: var(--radius-sm); padding: 16px; margin-bottom: 20px;">
+                        <h3 style="color: var(--brand-green); margin-bottom: 12px;">📊 Saved Progress Found!</h3>
+                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.9rem;">
+                            <div><strong>Segments touched:</strong> ${completedSegments} of ${segments.length}</div>
+                            <div><strong>Answers saved:</strong> ${totalAnswers}</div>
+                            <div><strong>Current position:</strong> Segment ${savedProgress.currentSegIdx + 1}</div>
+                            <div><strong>Last saved:</strong> ${lastSaved}</div>
+                        </div>
+                    </div>
+                `;
+                resumeButton = `<button class="btn btn-success" onclick="resumeSession()">▶ Resume Session</button>`;
+            }
             
             const welcomeHTML = `
                 <div class="card" id="welcomeBackCard">
@@ -28445,9 +28505,12 @@ const WORKSHOP_DATA = [
                         </div>
                     </div>
                     
-                    <div class="btn-row">
+                    ${progressHTML}
+                    
+                    <div class="btn-row" style="flex-wrap: wrap; gap: 12px;">
                         <button class="btn btn-secondary" onclick="showFullSurvey()">Update Profile</button>
-                        <button class="btn btn-primary" onclick="startWithSavedProfile()">Start Session →</button>
+                        ${resumeButton}
+                        <button class="btn btn-primary" onclick="startFreshSession()">Start New Session →</button>
                     </div>
                 </div>
             `;
@@ -28455,15 +28518,58 @@ const WORKSHOP_DATA = [
         }
 
         function showFullSurvey() {
-            location.reload();
             localStorage.removeItem('archiveTaggerProfile');
+            localStorage.removeItem('archiveTaggerProgress');
+            location.reload();
         }
-
-        function startWithSavedProfile() {
+        
+        function resumeSession() {
+            const savedProgress = loadProgress();
+            if (savedProgress) {
+                // Restore state
+                currentSegIdx = savedProgress.currentSegIdx || 0;
+                currentQIdx = savedProgress.currentQIdx || 0;
+                answers = savedProgress.answers || {};
+                stats = savedProgress.stats || { confirmed: 0, changed: 0 };
+                startTime = savedProgress.startTime ? new Date(savedProgress.startTime) : new Date();
+            }
+            
+            document.getElementById('userBadge').innerText = '👤 ' + userProfile.name;
+            document.getElementById('surveyScreen').classList.add('hidden');
+            document.getElementById('taggingScreen').classList.remove('hidden');
+            document.getElementById('totalSegments').innerText = segments.length;
+            
+            updateStatsDisplay();
+            loadSegment(currentSegIdx);
+            currentQIdx = savedProgress?.currentQIdx || 0;
+            renderQuestion();
+        }
+        
+        function startFreshSession() {
+            // Clear any saved progress
+            clearProgress();
+            
+            // Reset state
+            currentSegIdx = 0;
+            currentQIdx = 0;
+            answers = {};
+            stats = { confirmed: 0, changed: 0 };
+            
             document.getElementById('userBadge').innerText = '👤 ' + userProfile.name;
             document.getElementById('surveyScreen').classList.add('hidden');
             document.getElementById('modeScreen').classList.remove('hidden');
             document.getElementById('fullTaggingCount').innerText = segments.length;
+        }
+
+        function startWithSavedProfile() {
+            // Check if there's saved progress
+            const savedProgress = loadProgress();
+            if (savedProgress && savedProgress.answers && Object.keys(savedProgress.answers).length > 0) {
+                // There's progress - let them choose via the welcome screen buttons
+                startFreshSession();
+            } else {
+                startFreshSession();
+            }
         }
 
         // Initialize on page load
@@ -29005,6 +29111,9 @@ const WORKSHOP_DATA = [
                 }
                 updateStatsDisplay();
             }
+            
+            // AUTO-SAVE after each answer
+            saveProgress();
         }
 
         function updateStatsDisplay() {
@@ -29024,6 +29133,7 @@ const WORKSHOP_DATA = [
             // Handle open-ended question
             if (q.isOpenEnded) {
                 answers[`${currentSegIdx}_${q.id}`] = document.getElementById('openEndedText').value;
+                saveProgress(); // Save open-ended answers too
             } else {
                 // Check if answer selected - user MUST select an answer
                 const aiData = seg.aiSuggestions ? seg.aiSuggestions[q.id] : null;
@@ -29035,6 +29145,7 @@ const WORKSHOP_DATA = [
 
             if (currentQIdx < questions.length - 1) {
                 currentQIdx++;
+                saveProgress(); // Save position
                 renderQuestion();
             } else {
                 nextSegment();
@@ -29044,12 +29155,14 @@ const WORKSHOP_DATA = [
         function prevQuestion() {
             if (currentQIdx > 0) {
                 currentQIdx--;
+                saveProgress();
                 renderQuestion();
             } else if (currentSegIdx > 0) {
                 currentSegIdx--;
                 currentQIdx = questions.length - 1;
                 loadSegment(currentSegIdx);
                 currentQIdx = questions.length - 1;
+                saveProgress();
                 renderQuestion();
             }
         }
@@ -29057,7 +29170,9 @@ const WORKSHOP_DATA = [
         function nextSegment() {
             if (currentSegIdx < segments.length - 1) {
                 loadSegment(currentSegIdx + 1);
+                saveProgress(); // Save after moving to next segment
             } else {
+                clearProgress(); // Clear progress when session is complete
                 showResults();
             }
         }
