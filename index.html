@@ -29142,8 +29142,10 @@ const WORKSHOP_DATA = [
         }
 
         function updateStatsDisplay() {
-            document.getElementById('statConfirmed').innerText = stats.confirmed;
-            document.getElementById('statChanged').innerText = stats.changed;
+            const confirmedEl = document.getElementById('statConfirmed');
+            const changedEl = document.getElementById('statChanged');
+            if (confirmedEl) confirmedEl.innerText = stats.confirmed;
+            if (changedEl) changedEl.innerText = stats.changed;
         }
         
         function revealAiSuggestion() {
